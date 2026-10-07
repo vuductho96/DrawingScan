@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" type="image/svg+xml" href="/assets/icons/scan-line.svg">
+  <title>Drawing OCR — Kiểm tra bản vẽ</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script defer src="/assets/vendor/xlsx.full.min.js"></script>
+  <script defer src="/assets/app.js"></script>
+</head>
+<body>
+  <header class="top-bar">
+    <div class="brand-group">
+      <div class="brand">
+        <span class="brand-mark"><i data-icon="scan-line"></i></span>
+        <h1>Drawing OCR</h1>
+      </div>
+      <span class="divider-v" aria-hidden="true"></span>
+      <button class="doc-pill" id="docPillBtn" title="Mở kho bản vẽ (Stores)">
+        <i data-icon="file-text"></i>
+        <span id="documentTitle">Chưa chọn bản vẽ</span>
+      </button>
+      <div class="status-chip" id="statusMain">
+        <span class="status-dot"></span>
+        <span id="statusText" role="status" aria-live="polite">Sẵn sàng</span>
+      </div>
+    </div>
+
+    <nav class="main-menu" aria-label="Menu chính">
+      <button class="menu-btn" id="uploadBtn" title="Tải bản vẽ lên hoặc kéo thả trực tiếp vào khung bản vẽ">
+        <i data-icon="upload"></i>
+        <span>Upload</span>
+      </button>
+      <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg" hidden>
+
+      <button class="menu-btn" id="modelBtn" title="Chọn mô hình YOLO & PP-OCR">
+        <i data-icon="box"></i>
+        <span>Model</span>
+        <small class="menu-badge" id="activeModelBadge">YOLO11s</small>
+      </button>
+
+      <button class="menu-btn" id="storesBtn" title="Kho bản vẽ mẫu, bản vẽ đã tải lên & lịch sử quét">
+        <i data-icon="history"></i>
+        <span>Stores</span>
+      </button>
+
+      <button class="menu-btn" id="settingsBtn" title="Cài đặt thông tin đo & xuất báo cáo">
+        <i data-icon="settings-2"></i>
+        <span>Setting</span>
+      </button>
+    </nav>
+
+    <div class="action-group">
+      <button class="scan-button" id="scanBtn" title="Chạy nhận dạng (F5)">
+        <i data-icon="play"></i>
+        <span>Scan</span>
+        <kbd>F5</kbd>
+      </button>
+      <button class="export-button" id="exportBtn" disabled title="Xuất kết quả ra file Excel">
+        <i data-icon="download"></i>
+        <span>Xuất Excel</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="workspace-grid">
+    <!-- VÙNG 1: DRAWING + DRAG & DROP -->
+    <section class="drawing-panel" id="drawingPanel" aria-label="Bản vẽ kỹ thuật">
+      <div class="panel-bar">
+        <div class="toolbar-group page-controls">
+          <button class="icon-button" id="prevPage" title="Trang trước" aria-label="Trang trước" disabled><i data-icon="chevron-left"></i></button>
+          <span id="pageText" class="metric-text">1 / 1</span>
+          <button class="icon-button" id="nextPage" title="Trang sau" aria-label="Trang sau" disabled><i data-icon="chevron-right"></i></button>
+        </div>
+
+        <div class="toolbar-group zoom-controls">
+          <button class="icon-button" id="zoomOut" title="Thu nhỏ" aria-label="Thu nhỏ"><i data-icon="zoom-out"></i></button>
+          <span id="zoomText" class="metric-text">100%</span>
+          <button class="icon-button" id="zoomIn" title="Phóng to" aria-label="Phóng to"><i data-icon="zoom-in"></i></button>
+          <button class="icon-button" id="fitBtn" title="Vừa khung" aria-label="Vừa khung"><i data-icon="scan"></i></button>
+        </div>
+
+        <div class="toolbar-group view-controls">
+          <button class="seg-button active" id="showRegionsBtn" aria-pressed="true"><i data-icon="grid-2x2"></i><span>Vùng nhận dạng</span></button>
+          <button class="seg-button" id="imageOnlyBtn" aria-pressed="false"><i data-icon="image"></i><span>Chỉ ảnh</span></button>
+          <button class="icon-button" id="fullscreenBtn" title="Toàn màn hình" aria-label="Toàn màn hình"><i data-icon="maximize"></i></button>
+        </div>
+
+        <div class="timing-strip">
+          <span>YOLO <b id="yoloTime">—</b></span>
+          <span>OCR <b id="ocrTime">—</b></span>
+          <span>Tổng <b id="totalTime">—</b></span>
+        </div>
+      </div>
+
+      <div class="canvas-wrap" id="canvasWrap">
+        <div class="drop-zone-empty" id="canvasEmpty">
+          <div class="drop-card" id="emptyDropCard" role="button" tabindex="0" aria-label="Kéo thả hoặc nhấn để tải bản vẽ PDF hoặc ảnh">
+            <div class="drop-icon-ring"><i data-icon="upload"></i></div>
+            <h2>Kéo thả bản vẽ PDF / Ảnh vào đây</h2>
+            <p>Hỗ trợ <code>.pdf</code>, <code>.png</code>, <code>.jpg</code> — Tự động phát hiện Blue-Box + tách 3 vùng dung sai</p>
+            <div class="drop-actions">
+              <span class="primary-pill"><i data-icon="upload"></i> Chọn file từ máy</span>
+              <button type="button" class="secondary-pill" id="emptyStoresBtn"><i data-icon="file-text"></i> Chọn từ Stores</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="stageSizer">
+          <div id="drawingStage">
+            <img id="pageImg" alt="Bản vẽ đang kiểm tra" hidden>
+            <div id="bboxLayer"></div>
+          </div>
+        </div>
+
+        <div class="drop-overlay" id="dropOverlay" hidden>
+          <div class="drop-overlay-box">
+            <i data-icon="upload"></i>
+            <strong>Thả file bản vẽ vào đây</strong>
+            <span>Tự động tải lên và chạy nhận dạng ngay</span>
+          </div>
+        </div>
+
+        <div class="scan-overlay" id="scanOverlay" hidden>
+          <i data-icon="loader-circle"></i>
+          <span>Đang nhận dạng bản vẽ…</span>
+        </div>
+      </div>
+
+      <div class="panel-foot">
+        <span>Lăn chuột: Zoom · Ctrl + kéo: Pan · Kéo thả PDF/Ảnh bất kỳ lúc nào</span>
+        <span id="selectedRegionText">Chưa chọn vùng</span>
+      </div>
+    </section>
+
+    <!-- VÙNG 2: KẾT QUẢ OCR -->
+    <section class="results-panel" aria-label="Kết quả OCR">
+      <div class="panel-bar results-bar">
+        <div class="result-tabs" role="tablist" aria-label="Chế độ xem kết quả">
+          <button id="resultsTab" class="result-tab active" role="tab" aria-selected="true" aria-controls="resultsView">
+            <i data-icon="list"></i>
+            <span>Kết quả OCR <b id="resultCount">(0)</b></span>
+          </button>
+          <button id="cropsTab" class="result-tab" role="tab" aria-selected="false" aria-controls="cropsView" tabindex="-1">
+            <i data-icon="image"></i>
+            <span>Ảnh cắt <b id="cropCount">(0)</b></span>
+          </button>
+        </div>
+        <span class="review-stat" id="reviewCount">0 / 0 đã duyệt</span>
+      </div>
+
+      <div class="results-view" id="resultsView" role="tabpanel" aria-labelledby="resultsTab">
+        <div class="table-scroll">
+          <table class="result-table">
+            <colgroup>
+              <col class="check-col">
+              <col class="id-col">
+              <col class="nominal-col">
+              <col class="tol-col">
+              <col class="tol-col">
+              <col class="review-col">
+              <col class="star-col">
+            </colgroup>
+            <thead>
+              <tr>
+                <th><input id="selectAll" type="checkbox" checked aria-label="Chọn tất cả để xuất Excel"></th>
+                <th>#</th>
+                <th>Nominal</th>
+                <th>Tol −</th>
+                <th>Tol +</th>
+                <th>Duyệt</th>
+                <th title="Đánh dấu quan trọng"><i data-icon="star"></i><span class="sr-only">Quan trọng</span></th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+          <div class="results-empty" id="resultsEmpty">
+            <i data-icon="scan-line"></i>
+            <p>Chưa có dữ liệu OCR</p>
+            <small>Kéo thả bản vẽ vào khung bên trái hoặc nhấn <b>Scan (F5)</b>.</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="crops-view" id="cropsView" role="tabpanel" aria-labelledby="cropsTab" hidden></div>
+
+      <div class="region-detail" id="regionDetail" hidden></div>
+    </section>
+  </main>
+
+  <!-- MENU 1: MODEL DIALOG -->
+  <dialog id="modelDialog" class="app-dialog">
+    <form method="dialog">
+      <div class="dialog-heading">
+        <h2>Cấu hình Model nhận dạng</h2>
+        <button class="icon-button" aria-label="Đóng hộp thoại Model"><i data-icon="x"></i></button>
+      </div>
+
+      <div class="dialog-body">
+        <label class="field-label" for="yoloSelect">1. YOLO Phát hiện Blue-Box trên bản vẽ lớn (1-Class)</label>
+        <select id="yoloSelect"></select>
+
+        <label class="field-label">2. YOLO Tách 3 vùng kích thước &amp; dung sai (Stage 2)</label>
+        <div class="locked-model-box">
+          <i data-icon="check-check"></i>
+          <div>
+            <strong>yolo_3regions_31026.onnx</strong>
+            <span id="enable3RegionLabel">Luôn bật — Tự động tách Nominal / Tol+ / Tol− trong từng Blue-Box</span>
+          </div>
+          <input id="enable3RegionCheck" type="checkbox" checked hidden>
+        </div>
+
+        <label class="field-label" for="ppocrSelect">3. Mô hình đọc ký tự PP-OCR (.onnx)</label>
+        <select id="ppocrSelect"></select>
+      </div>
+
+      <div class="dialog-actions">
+        <button class="primary-button" value="save">Áp dụng &amp; Quét lại</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- MENU 2: STORES DIALOG (KHO BẢN VẼ & LỊCH SỬ) -->
+  <dialog id="storesDialog" class="app-dialog dialog-wide">
+    <div class="dialog-heading">
+      <h2>Stores — Kho bản vẽ &amp; Lịch sử</h2>
+      <button class="icon-button" id="closeStores" aria-label="Đóng Stores"><i data-icon="x"></i></button>
+    </div>
+
+    <div class="stores-grid">
+      <div class="stores-col">
+        <div class="stores-col-head">
+          <h3>Kho bản vẽ sẵn có</h3>
+          <button type="button" class="mini-upload-btn" id="storesUploadBtn"><i data-icon="upload"></i> Thêm file</button>
+        </div>
+        <!-- Hidden select for state compatibility -->
+        <select id="pdfSelect" hidden></select>
+        <div class="store-list" id="drawingStoreList"></div>
+      </div>
+
+      <div class="stores-col">
+        <div class="stores-col-head">
+          <h3>Lịch sử quét gần đây</h3>
+        </div>
+        <div class="store-list" id="historyList"></div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- MENU 3: SETTING DIALOG (THÔNG TIN ĐO & XUẤT BÁO CÁO) -->
+  <dialog id="settingsDialog" class="app-dialog">
+    <form method="dialog">
+      <div class="dialog-heading">
+        <h2>Setting — Thông tin bản vẽ &amp; phiếu đo</h2>
+        <button class="icon-button" aria-label="Đóng Setting"><i data-icon="x"></i></button>
+      </div>
+
+      <div class="dialog-body form-grid">
+        <div>
+          <label class="field-label" for="operator">Người đo</label>
+          <div class="input-with-icon"><i data-icon="user-round"></i><input id="operator" placeholder="Nhập tên người đo" autocomplete="name"></div>
+        </div>
+        <div>
+          <label class="field-label" for="measurementDate">Ngày đo</label>
+          <div class="input-with-icon"><i data-icon="calendar"></i><input id="measurementDate" type="date"></div>
+        </div>
+        <div>
+          <label class="field-label" for="partName">Tên / Mã linh kiện</label>
+          <div class="input-with-icon"><i data-icon="box"></i><input id="partName" placeholder="Mã linh kiện"></div>
+        </div>
+        <div>
+          <label class="field-label" for="moldName">Mold name (Tên khuôn)</label>
+          <div class="input-with-icon"><i data-icon="file-text"></i><input id="moldName" placeholder="Tên khuôn"></div>
+        </div>
+      </div>
+      <p class="dialog-note">Các thông tin này được gắn tự động vào file khi bạn nhấn <b>Xuất Excel</b>.</p>
+
+      <div class="dialog-actions">
+        <button class="primary-button" value="save">Lưu cài đặt</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

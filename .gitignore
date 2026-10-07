@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+backups/
+*.rar
+ocrtool-pdfscan-render-cache/
+ocrtool-pdfscan-sessions/
+audit_results/
+uploads/
+finetune_runs/
+training/ppocr_v6_finetune/
+training/runs_3regions_v3/
+training/CheckVal/
